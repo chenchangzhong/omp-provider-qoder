@@ -15,6 +15,7 @@ export interface QoderCredentials extends OAuthCredentials {
 }
 
 const AUTH_FILE = join(homedir(), ".omp", "agent", "auth.json");
+const OMP_DB = join(homedir(), ".omp", "agent", "agent.db");
 
 /**
  * Read the Qoder identity (userID/email/name/machineID) from omp's own auth
@@ -25,6 +26,33 @@ const AUTH_FILE = join(homedir(), ".omp", "agent", "auth.json");
  * This is best-effort and falls back to null so callers can use placeholders.
  */
 export function getCachedCredentials(_accessToken: string, providerID = "qoder"): QoderCredentials | null {
+  // Try omp's agent.db (SQLite) first
+  if (existsSync(OMP_DB)) {
+    try {
+      // bun:sqlite is available at runtime when running inside omp (bun)
+      const { Database } = require("bun:sqlite") as { Database: new (path: string) => { prepare: (sql: string) => { get: (...params: unknown[]) => { data?: string } }; close: () => void } };
+      const db = new Database(OMP_DB);
+      const row = db.prepare("SELECT data FROM auth_credentials WHERE provider = ?").get(providerID) as { data?: string } | undefined;
+      db.close();
+      if (row && typeof row.data === "string") {
+        const parsed = JSON.parse(row.data) as { access?: string; refresh?: string };
+        const access = parsed.access || "";
+        const refresh = parsed.refresh || "";
+        if (refresh.startsWith("pat|")) {
+          const parts = refresh.split("|");
+          const userID = parts[3] || "";
+          const machineID = parts[4] || "";
+          const emailPart = parts[5] || "";
+          const email = emailPart.startsWith("email:") ? emailPart.slice(6) : "";
+          if (userID) {
+            return { access, refresh, userID, email, name: "", machineID } as QoderCredentials;
+          }
+        }
+      }
+    } catch {}
+  }
+
+  // Fallback to omp's auth.json
   if (existsSync(AUTH_FILE)) {
     try {
       const auth = JSON.parse(readFileSync(AUTH_FILE, "utf-8"));
@@ -34,6 +62,7 @@ export function getCachedCredentials(_accessToken: string, providerID = "qoder")
       }
     } catch {}
   }
+
   return null;
 }
 
