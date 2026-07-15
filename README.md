@@ -1,116 +1,110 @@
-# pi-provider-qoder
+# omp-provider-qoder
 
-A [pi](https://shittycodingagent.ai/) provider extension that connects pi to the **Qoder API**, exposing Qoder Global and Qoder China models through provider surfaces.
+一个 [OMP](https://github.com/can1357/oh-my-pi) provider 扩展，将 omp 连接到 **Qoder API**，通过 provider 接口暴露 Qoder Global 和 Qoder China 模型。
 
-## Features
+## 功能特性
 
-- **Two provider entries**:
-  - `qoder` — Global / international Qoder.
-  - `qoder-cn` — Qoder China, forced to CN endpoints and independent of `QODER_REGION`.
-- **Interactive Login**: Global Qoder supports browser device-code flow or Personal Access Token (PAT) login.
-- **Qoder CN PAT Login**: China edition uses a separate PAT login entry (`/login qoder-cn`) and CN token exchange endpoints.
-- **WAF Bypass**: Built-in WAF obfuscation and body encoding (`Encode=1`).
-- **COSY Signing**: Full COSY signature header generation (RSA/AES-CBC/MD5).
-- **Dynamic Model Catalog**: Dynamically fetches model limits, effort configurations, and options from the `/algo/api/v2/model/list` endpoint.
-- **Reasoning/Thinking Support**: Real-time extraction of thinking process from API reasoning or HTML-like `<think>` tags.
+- **两个 provider 入口**：
+  - `qoder` — 全球/国际版 Qoder。
+  - `qoder-cn` — 中国版 Qoder，强制使用 CN 端点，不受 `QODER_REGION` 影响。
+- **交互式登录**：Global Qoder 支持浏览器设备码流程或个人访问令牌（PAT）登录。
+- **Qoder CN PAT 登录**：中国版使用独立的 PAT 登录入口（`/login qoder-cn`）和 CN token 交换端点。
+- **WAF 绕过**：内置 WAF 混淆和请求体编码（`Encode=1`）。
+- **COSY 签名**：完整的 COSY 签名头生成（RSA/AES-CBC/MD5）。
+- **动态模型目录**：从 `/algo/api/v2/model/list` 端点动态获取模型限制、effort 配置和选项。
+- **推理/思考支持**：从 API reasoning 或类 HTML `<think>` 标签中实时提取思考过程。
 
-## Quick start
+## 快速开始
 
-Install the provider:
-
-```bash
-pi install npm:pi-provider-qoder
-```
-
-Or install it globally with npm:
+安装 provider：
 
 ```bash
-npm install -g pi-provider-qoder
+omp install npm:omp-provider-qoder
 ```
 
-Then log in from pi.
+或通过 npm 全局安装：
 
-Global / international edition:
+```bash
+npm install -g omp-provider-qoder
+```
+
+然后从 omp 登录。
+
+全球/国际版：
 
 ```text
 /login qoder
 ```
 
-China edition:
+中国版：
 
 ```text
 /login qoder-cn
 ```
 
-### Personal Access Token (PAT)
+### 个人访问令牌（PAT）
 
-A Qoder PAT (`pt-...`) cannot authenticate API calls directly — the provider
-exchanges it for a short-lived job token (mirroring the official `qodercli` /
-`qoderclicn` flow) and resolves your account identity automatically.
+Qoder PAT（`pt-...`）不能直接用于 API 调用认证——provider 会将其交换为短期有效的 job token（模拟官方 `qodercli` / `qoderclicn` 流程），并自动解析您的账户身份。
 
-Global Qoder:
+Global Qoder：
 
-- Run `/login qoder` and choose **Use API Key (PAT)**, then paste the token.
-- Or set `QODER_PERSONAL_ACCESS_TOKEN` (or `QODER_PAT`) before starting pi.
+- 运行 `/login qoder`，选择 **Use API Key (PAT)**，然后粘贴令牌。
+- 或在启动 omp 前设置 `QODER_PERSONAL_ACCESS_TOKEN`（或 `QODER_PAT`）。
 
-Qoder China:
+Qoder China：
 
-- Run `/login qoder-cn`, then paste the CN PAT.
-- Or set `QODERCN_PERSONAL_ACCESS_TOKEN` (or `QODERCN_PAT`) before starting pi.
+- 运行 `/login qoder-cn`，然后粘贴 CN PAT。
+- 或在启动 omp 前设置 `QODERCN_PERSONAL_ACCESS_TOKEN`（或 `QODERCN_PAT`）。
 
-> The exchanged job token is short-lived; the provider transparently re-exchanges
-> the stored PAT when it expires.
+> 交换后的 job token 是短期有效的；provider 会在其过期时透明地重新交换已存储的 PAT。
 
-### Region environment variables
+### 区域环境变量
 
-The provider also understands these optional variables:
+provider 还能识别以下可选变量：
 
 ```bash
-export QODER_REGION=cn       # or QODER_BACKEND=cn / QODER_MODE=cn
+export QODER_REGION=cn       # 或 QODER_BACKEND=cn / QODER_MODE=cn
 ```
 
-Setting a CN PAT without a global PAT also auto-selects CN mode for the `qoder`
-entry, but the recommended explicit China entry is still `/login qoder-cn` and
-`--provider qoder-cn`.
+在没有全局 PAT 的情况下设置 CN PAT 也会为 `qoder` 入口自动选择 CN 模式，但推荐的显式中国入口仍然是 `/login qoder-cn` 和 `--provider qoder-cn`。
 
-## Endpoints
+## 端点
 
-Global:
+Global：
 
-- PAT exchange: `https://openapi.qoder.sh/api/v1/jobToken/exchange`
-- User info: `https://openapi.qoder.sh/api/v1/userinfo`
-- Usage: `https://openapi.qoder.sh/api/v2/quota/usage`
-- Model / chat gateway: `https://api3.qoder.sh/algo/api/v2/...`
+- PAT 交换：`https://openapi.qoder.sh/api/v1/jobToken/exchange`
+- 用户信息：`https://openapi.qoder.sh/api/v1/userinfo`
+- 用量查询：`https://openapi.qoder.sh/api/v2/quota/usage`
+- 模型/聊天网关：`https://api3.qoder.sh/algo/api/v2/...`
 
-China:
+China：
 
-- PAT exchange: `https://openapi.qoder.com.cn/api/v1/jobToken/exchange`
-- User info: `https://openapi.qoder.com.cn/api/v1/userinfo`
-- Usage: `https://openapi.qoder.com.cn/api/v2/quota/usage`
-- Model / chat gateway: `https://gateway.qoder.com.cn/algo/api/v2/...`
+- PAT 交换：`https://openapi.qoder.com.cn/api/v1/jobToken/exchange`
+- 用户信息：`https://openapi.qoder.com.cn/api/v1/userinfo`
+- 用量查询：`https://openapi.qoder.com.cn/api/v2/quota/usage`
+- 模型/聊天网关：`https://gateway.qoder.com.cn/algo/api/v2/...`
 
-## Models
+## 模型
 
 ### Global `qoder`
 
-Exposes the backing model keys returned by Qoder, including:
+暴露 Qoder 返回的后端模型 key，包括：
 
-- **Tier Models**: `auto`, `ultimate`, `performance`, `efficient`, `lite`
-- **Frontier Models**:
-  - `qmodel` (Qwen3.7 Plus)
-  - `qmodel_latest` (Qwen3.7 Max)
-  - `dmodel` (DeepSeek V4 Pro)
-  - `dfmodel` (DeepSeek V4 Flash)
-  - `gm51model` (GLM)
-  - `kmodel` (Kimi)
-  - `mmodel` (MiniMax)
+- **层级模型**：`auto`、`ultimate`、`performance`、`efficient`、`lite`
+- **前沿模型**：
+  - `qmodel`（Qwen3.7 Plus）
+  - `qmodel_latest`（Qwen3.7 Max）
+  - `dmodel`（DeepSeek V4 Pro）
+  - `dfmodel`（DeepSeek V4 Flash）
+  - `gm51model`（GLM）
+  - `kmodel`（Kimi）
+  - `mmodel`（MiniMax）
 
 ### China `qoder-cn`
 
-The China provider exposes friendly model IDs and maps them back to Qoder CN's
-internal keys at request time:
+中国版 provider 暴露友好的模型 ID，并在请求时将其映射回 Qoder CN 的内部 key：
 
-| Friendly ID | Qoder CN key | Context | Images | Reasoning |
+| 友好 ID | Qoder CN key | 上下文 | 图片 | 推理 |
 | --- | --- | ---: | :---: | :---: |
 | `auto` | `auto` | 180K | ✅ | ✅ |
 | `qwen3.7-max` | `qmodel_latest` | 1M | ✅ | ✅ |
@@ -122,45 +116,44 @@ internal keys at request time:
 | `kimi-k2.6` | `kmodel` | 256K | ✅ | ✅ |
 | `minimax-m2.7` | `mmodel` | 200K | ❌ | ❌ |
 
-Compatibility aliases are also accepted for request mapping, such as
-`qwen3.6-plus` → `qmodel`, `glm-5.1` → `gm51model`, and `minimax-m3` → `mmodel`.
+同时还接受兼容性别名用于请求映射，例如 `qwen3.6-plus` → `qmodel`、`glm-5.1` → `gm51model`、`minimax-m3` → `mmodel`。
 
-## Usage
+## 使用
 
-Once logged in, select any Qoder model in pi:
+登录后，在 omp 中选择任意 Qoder 模型：
 
 ```text
 /model qwen3.7-plus
 ```
 
-Or start directly:
+或直接启动：
 
 ```bash
-pi --provider qoder-cn --model qwen3.7-plus
+omp --provider qoder-cn --model qwen3.7-plus
 ```
 
-Global example:
+Global 示例：
 
 ```bash
-pi --provider qoder --model auto
+omp --provider qoder --model auto
 ```
 
-## Architecture
+## 架构
 
 ```text
 src/
-├── index.ts            # Extension registration
-├── cosy.ts             # COSY signature, machine ID, region/endpoints, CN model aliases
-├── login.ts            # OAuth device flow + PAT login sequence
-├── pat.ts              # PAT → job-token exchange + identity resolution
-├── models.ts           # Model definitions and dynamic config cache
-├── oauth.ts            # PAT / OAuth callback orchestrator
-├── stream.ts           # Main streaming response handler
-├── transform.ts        # Message conversions (OpenAI schema mapping)
-├── thinking-parser.ts  # Fallback <think> tag parser
-└── qoder-encoding.ts   # WAF bypass body encoder
+├── index.ts            # 扩展注册
+├── cosy.ts             # COSY 签名、机器 ID、区域/端点、CN 模型别名
+├── login.ts            # OAuth 设备码流程 + PAT 登录序列
+├── pat.ts              # PAT → job-token 交换 + 身份解析
+├── models.ts           # 模型定义和动态配置缓存
+├── oauth.ts            # PAT / OAuth 回调编排器
+├── stream.ts           # 主流式响应处理器
+├── transform.ts        # 消息转换（OpenAI 模式映射）
+├── thinking-parser.ts  # 备选 `<think>` 标签解析器
+└── qoder-encoding.ts   # WAF 绕过请求体编码器
 ```
 
-## License
+## 许可证
 
 MIT

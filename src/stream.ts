@@ -10,7 +10,7 @@ import type {
   ThinkingContent,
   ToolCall,
 } from "@earendil-works/pi-ai";
-import * as PiAi from "@earendil-works/pi-ai";
+import * as AiSdk from "@earendil-works/pi-ai";
 import {
   buildAuthHeaders,
   getMachineId,
@@ -79,7 +79,7 @@ export function streamQoder(
   context: Context,
   options?: SimpleStreamOptions,
 ): AssistantMessageEventStream {
-  const StreamCtor = (PiAi as unknown as { AssistantMessageEventStream: new () => AssistantMessageEventStream })
+  const StreamCtor = (AiSdk as unknown as { AssistantMessageEventStream: new () => AssistantMessageEventStream })
     .AssistantMessageEventStream;
   const stream = new StreamCtor();
 

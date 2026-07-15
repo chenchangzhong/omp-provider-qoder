@@ -45,7 +45,7 @@ export interface QoderModelDef {
 function getQoderCachePath(mode?: string): string {
   return join(
     homedir(),
-    ".pi",
+    ".omp",
     "agent",
     isQoderCNMode(mode) ? "qoder-cn-models-cache.json" : "qoder-models-cache.json",
   );

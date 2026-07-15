@@ -194,7 +194,7 @@ function computeSigPath(urlStr: string): string {
 }
 
 export function getMachineId(): string {
-  const paths = [join(homedir(), ".qoder", ".auth", "machine_id"), join(homedir(), ".pi", "agent", "qoder-machine-id")];
+  const paths = [join(homedir(), ".qoder", ".auth", "machine_id"), join(homedir(), ".omp", "agent", "qoder-machine-id")];
   for (const p of paths) {
     if (existsSync(p)) {
       try {

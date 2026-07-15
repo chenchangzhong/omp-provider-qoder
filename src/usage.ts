@@ -39,7 +39,7 @@ async function fetchQoderUsageForMode(credentials: OAuthCredentials, mode: strin
     headers: {
       Authorization: `Bearer ${credentials.access}`,
       Accept: "application/json",
-      "User-Agent": "pi-provider-qoder",
+      "User-Agent": "omp-provider-qoder",
     },
   });
 

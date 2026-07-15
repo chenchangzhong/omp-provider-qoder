@@ -40,7 +40,7 @@ export async function interactiveLogin(
   callbacks: OAuthLoginCallbacks,
   mode: string = getQoderMode(),
 ): Promise<OAuthCredentials> {
-  // pi drives this via its built-in LoginDialog, which wires onPrompt/onAuth/
+  // omp drives this via its built-in LoginDialog, which wires onPrompt/onAuth/
   // onProgress to a focused input. We must use those callbacks directly rather
   // than opening our own ctx.ui.custom surface (which would steal focus and
   // leave onPrompt unable to receive keystrokes).
@@ -137,7 +137,7 @@ async function runDeviceFlow(callbacks: OAuthLoginCallbacks): Promise<OAuthCrede
         method: "GET",
         headers: {
           Accept: "application/json",
-          "User-Agent": "pi-provider-qoder",
+          "User-Agent": "omp-provider-qoder",
         },
         signal: getSignal(callbacks),
       });
@@ -176,7 +176,7 @@ async function runDeviceFlow(callbacks: OAuthLoginCallbacks): Promise<OAuthCrede
           headers: {
             Authorization: `Bearer ${tokenData.token}`,
             Accept: "application/json",
-            "User-Agent": "pi-provider-qoder",
+            "User-Agent": "omp-provider-qoder",
           },
         });
         if (userinfoRes.ok) {

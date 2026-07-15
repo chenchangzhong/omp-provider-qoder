@@ -14,14 +14,14 @@ export interface QoderCredentials extends OAuthCredentials {
   machineID: string;
 }
 
-const AUTH_FILE = join(homedir(), ".pi", "agent", "auth.json");
+const AUTH_FILE = join(homedir(), ".omp", "agent", "auth.json");
 
 /**
- * Read the Qoder identity (userID/email/name/machineID) from pi's own auth
- * store. pi persists the full OAuthCredentials there on login/refresh and keeps
+ * Read the Qoder identity (userID/email/name/machineID) from omp's own auth
+ * store. omp persists the full OAuthCredentials there on login/refresh and keeps
  * it up to date, so there is no need to maintain a separate credentials cache.
  *
- * Note: the auth.json path/shape is a pi internal convention, not a public API.
+ * Note: the auth.json path/shape is an omp internal convention, not a public API.
  * This is best-effort and falls back to null so callers can use placeholders.
  */
 export function getCachedCredentials(_accessToken: string, providerID = "qoder"): QoderCredentials | null {
@@ -46,7 +46,7 @@ async function loginQoderForMode(callbacks: OAuthLoginCallbacks, mode: string): 
     try {
       const creds = await credentialsFromPat(pat, mode);
       const qCreds = creds as QoderCredentials;
-      // pi persists these credentials in auth.json itself; no separate cache needed.
+      // omp persists these credentials in auth.json itself; no separate cache needed.
       // Cache models in background
       updateQoderModelsCache(qCreds.access, qCreds.userID, qCreds.name, qCreds.email, mode).catch(() => {});
       return creds;
@@ -58,7 +58,7 @@ async function loginQoderForMode(callbacks: OAuthLoginCallbacks, mode: string): 
   // 2. Interactive login (CN only supports PAT prompt here; global supports device flow fallback)
   const creds = await interactiveLogin(callbacks, mode);
 
-  // Cache models in background. pi persists the credentials in auth.json itself.
+  // Cache models in background. omp persists the credentials in auth.json itself.
   try {
     const qCreds = creds as QoderCredentials;
     updateQoderModelsCache(qCreds.access, qCreds.userID, qCreds.name, qCreds.email, mode).catch(() => {});
@@ -119,7 +119,7 @@ async function refreshQoderTokenForMode(credentials: OAuthCredentials, mode: str
         "Content-Type": "application/json",
         Authorization: `Bearer ${credentials.access}`,
         Accept: "application/json",
-        "User-Agent": "pi-provider-qoder",
+        "User-Agent": "omp-provider-qoder",
       },
       body: JSON.stringify({ refreshToken }),
     });
@@ -154,7 +154,7 @@ async function refreshQoderTokenForMode(credentials: OAuthCredentials, mode: str
         machineID,
       };
 
-      // pi persists the refreshed credentials in auth.json itself.
+      // omp persists the refreshed credentials in auth.json itself.
       // Cache models in background
       updateQoderModelsCache(newAccess, userID, prevName, prevEmail, mode).catch(() => {});
 

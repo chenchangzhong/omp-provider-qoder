@@ -8,7 +8,7 @@ import {
   isQoderCNMode,
 } from "./cosy.js";
 
-const UA = "pi-provider-qoder";
+const UA = "omp-provider-qoder";
 
 /**
  * Marker prefix used in the credential `refresh` field to identify PAT-based

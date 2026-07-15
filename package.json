@@ -1,15 +1,15 @@
 {
-  "name": "pi-provider-qoder",
+  "name": "omp-provider-qoder",
   "version": "0.2.2",
-  "description": "Pi extension for Qoder AI — with OAuth authentication, COSY signatures and WAF bypass",
+  "description": "OMP extension for Qoder AI — with OAuth authentication, COSY signatures and WAF bypass",
   "type": "module",
   "license": "MIT",
   "publishConfig": {
     "access": "public"
   },
   "keywords": [
-    "pi-package",
-    "pi",
+    "omp-package",
+    "omp",
     "qoder",
     "ai",
     "provider"
@@ -29,7 +29,7 @@
     "prepare": "npm run build",
     "prepublishOnly": "npm run check && npm run build"
   },
-  "pi": {
+  "omp": {
     "extensions": [
       "./dist/index.js"
     ]

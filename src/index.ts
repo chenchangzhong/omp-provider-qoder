@@ -12,7 +12,7 @@ import { getCachedCredentials, loginQoder, loginQoderCN, refreshQoderToken, refr
 import { streamQoder } from "./stream.js";
 import { fetchQoderUsage, fetchQoderUsageCN } from "./usage.js";
 
-// pi supports a `fetchUsage` hook on the oauth config at runtime, but it is not
+// omp supports a `fetchUsage` hook on the oauth config at runtime, but it is not
 // part of the published ProviderConfig type. Declare the extension locally.
 type OAuthConfigWithUsage = NonNullable<ProviderConfig["oauth"]> & {
   fetchUsage: (credentials: OAuthCredentials) => Promise<unknown>;
@@ -46,9 +46,9 @@ function createQoderOAuth(providerID: string, mode: string): OAuthConfigWithUsag
   };
 }
 
-function registerQoderProvider(pi: ExtensionAPI, providerID: string, mode: string): void {
+function registerQoderProvider(ext: ExtensionAPI, providerID: string, mode: string): void {
   const oauth = createQoderOAuth(providerID, mode);
-  pi.registerProvider(providerID, {
+  ext.registerProvider(providerID, {
     baseUrl: getQoderBaseUrl(mode),
     api: "qoder-api" as Api,
     models: modelsForProvider(mode, providerID) as unknown as ProviderConfig["models"],
@@ -57,12 +57,12 @@ function registerQoderProvider(pi: ExtensionAPI, providerID: string, mode: strin
   });
 }
 
-export default function (pi: ExtensionAPI) {
+export default function (ext: ExtensionAPI) {
   // Refresh the models cache once per session at startup if it is missing or
   // stale (>1h old), rather than on every message in the stream hot path.
   // Login/refresh are the other rebuild triggers; this covers the case where
   // the cache was deleted while the token is still valid.
-  pi.on("session_start", async (_event, ctx) => {
+  ext.on("session_start", async (_event, ctx) => {
     for (const [providerID, mode] of [
       ["qoder", getQoderMode()],
       ["qoder-cn", "cn"],
@@ -81,6 +81,6 @@ export default function (pi: ExtensionAPI) {
     }
   });
 
-  registerQoderProvider(pi, "qoder", getQoderMode());
-  registerQoderProvider(pi, "qoder-cn", "cn");
+  registerQoderProvider(ext, "qoder", getQoderMode());
+  registerQoderProvider(ext, "qoder-cn", "cn");
 }
