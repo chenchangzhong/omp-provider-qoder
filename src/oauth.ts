@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { OAuthCredentials, OAuthLoginCallbacks } from "@earendil-works/pi-ai";
@@ -15,7 +15,6 @@ export interface QoderCredentials extends OAuthCredentials {
   machineID: string;
 }
 
-const AUTH_FILE = join(homedir(), ".omp", "agent", "auth.json");
 
 /** Return the PAT exposed through the environment for a provider mode. */
 export function getQoderPatForMode(mode: string): string {
@@ -48,13 +47,37 @@ export async function autoLoginQoderFromEnvironment(providerID: string, mode: st
  * This is best-effort and falls back to null so callers can use placeholders.
  */
 export function getCachedCredentials(_accessToken: string, providerID = "qoder"): QoderCredentials | null {
-  // Fallback to omp's auth.json
-  if (existsSync(AUTH_FILE)) {
+  // Try omp's agent.db (SQLite) — OMP stores credentials here
+  const OMP_DB = join(homedir(), ".omp", "agent", "agent.db");
+  if (existsSync(OMP_DB)) {
     try {
-      const auth = JSON.parse(readFileSync(AUTH_FILE, "utf-8"));
-      const creds = auth?.[providerID] || (providerID === "qoder" ? auth?.qoder : null);
-      if (creds?.userID) {
-        return creds as QoderCredentials;
+      // bun:sqlite is available at runtime when running inside omp (bun)
+      const { Database } = require("bun:sqlite") as {
+        Database: new (path: string) => {
+          prepare: (sql: string) => { get: (...params: unknown[]) => { data?: string } };
+          close: () => void;
+        };
+      };
+      const db = new Database(OMP_DB);
+      const row = db.prepare("SELECT data FROM auth_credentials WHERE provider = ?").get(providerID) as
+        | { data?: string }
+        | undefined;
+      db.close();
+      if (row && typeof row.data === "string") {
+        const parsed = JSON.parse(row.data) as { access?: string; refresh?: string; email?: string };
+        const access = parsed.access || "";
+        const refresh = parsed.refresh || "";
+        const email = parsed.email || "";
+        if (refresh.startsWith("pat|")) {
+          const parts = refresh.split("|");
+          const userID = parts[3] || "";
+          const machineID = parts[4] || "";
+          const emailPart = parts[5] || "";
+          const refreshEmail = emailPart.startsWith("email:") ? emailPart.slice(6) : "";
+          if (userID) {
+            return { access, refresh, userID, email: email || refreshEmail, name: "", machineID } as QoderCredentials;
+          }
+        }
       }
     } catch {}
   }
