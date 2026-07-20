@@ -1,6 +1,6 @@
 {
   "name": "omp-provider-qoder",
-  "version": "0.2.2",
+  "version": "0.2.5",
   "description": "OMP extension for Qoder AI — with OAuth authentication, COSY signatures and WAF bypass",
   "type": "module",
   "license": "MIT",

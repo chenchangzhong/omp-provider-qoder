@@ -2,7 +2,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { OAuthCredentials, OAuthLoginCallbacks } from "@earendil-works/pi-ai";
-import { getMachineId, getQoderCNPat, getQoderMode, getQoderRefreshURL, isQoderCNMode } from "./cosy.js";
+import { AuthStorage } from "@earendil-works/pi-coding-agent";
+import { getMachineId, getQoderMode, getQoderRefreshURL, isQoderCNMode } from "./cosy.js";
 import { interactiveLogin } from "./login.js";
 import { updateQoderModelsCache } from "./models.js";
 import { credentialsFromPat, decodePatRefresh, isPatRefresh } from "./pat.js";
@@ -15,7 +16,28 @@ export interface QoderCredentials extends OAuthCredentials {
 }
 
 const AUTH_FILE = join(homedir(), ".omp", "agent", "auth.json");
-const OMP_DB = join(homedir(), ".omp", "agent", "agent.db");
+
+/** Return the PAT exposed through the environment for a provider mode. */
+export function getQoderPatForMode(mode: string): string {
+  if (isQoderCNMode(mode)) {
+    return process.env.QODERCN_API_KEY || process.env.QODERCN_PERSONAL_ACCESS_TOKEN || process.env.QODERCN_PAT || "";
+  }
+  return process.env.QODER_API_KEY || process.env.QODER_PERSONAL_ACCESS_TOKEN || process.env.QODER_PAT || "";
+}
+
+/** Exchange an environment PAT before pi resolves its initial model. */
+export async function autoLoginQoderFromEnvironment(providerID: string, mode: string): Promise<void> {
+  const pat = getQoderPatForMode(mode);
+  if (!pat) return;
+
+  const authStorage = AuthStorage.create();
+  if (authStorage.get(providerID)) return;
+
+  const credentials = await credentialsFromPat(pat, mode);
+  authStorage.set(providerID, { type: "oauth", ...credentials });
+  const qCreds = credentials as QoderCredentials;
+  updateQoderModelsCache(qCreds.access, qCreds.userID, qCreds.name, qCreds.email, mode).catch(() => {});
+}
 
 /**
  * Read the Qoder identity (userID/email/name/machineID) from omp's own auth
@@ -26,32 +48,6 @@ const OMP_DB = join(homedir(), ".omp", "agent", "agent.db");
  * This is best-effort and falls back to null so callers can use placeholders.
  */
 export function getCachedCredentials(_accessToken: string, providerID = "qoder"): QoderCredentials | null {
-  // Try omp's agent.db (SQLite) first
-  if (existsSync(OMP_DB)) {
-    try {
-      // bun:sqlite is available at runtime when running inside omp (bun)
-      const { Database } = require("bun:sqlite") as { Database: new (path: string) => { prepare: (sql: string) => { get: (...params: unknown[]) => { data?: string } }; close: () => void } };
-      const db = new Database(OMP_DB);
-      const row = db.prepare("SELECT data FROM auth_credentials WHERE provider = ?").get(providerID) as { data?: string } | undefined;
-      db.close();
-      if (row && typeof row.data === "string") {
-        const parsed = JSON.parse(row.data) as { access?: string; refresh?: string };
-        const access = parsed.access || "";
-        const refresh = parsed.refresh || "";
-        if (refresh.startsWith("pat|")) {
-          const parts = refresh.split("|");
-          const userID = parts[3] || "";
-          const machineID = parts[4] || "";
-          const emailPart = parts[5] || "";
-          const email = emailPart.startsWith("email:") ? emailPart.slice(6) : "";
-          if (userID) {
-            return { access, refresh, userID, email, name: "", machineID } as QoderCredentials;
-          }
-        }
-      }
-    } catch {}
-  }
-
   // Fallback to omp's auth.json
   if (existsSync(AUTH_FILE)) {
     try {
@@ -70,7 +66,7 @@ async function loginQoderForMode(callbacks: OAuthLoginCallbacks, mode: string): 
   // 1. Try environment variables first (PAT). A PAT (pt-...) must be exchanged
   //    for a short-lived job token before it can be used — credentialsFromPat
   //    handles the exchange + identity resolution.
-  const pat = isQoderCNMode(mode) ? getQoderCNPat() : process.env.QODER_PERSONAL_ACCESS_TOKEN || process.env.QODER_PAT;
+  const pat = getQoderPatForMode(mode);
   if (pat) {
     try {
       const creds = await credentialsFromPat(pat, mode);

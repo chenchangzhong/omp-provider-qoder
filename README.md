@@ -2,6 +2,9 @@
 
 一个 [OMP](https://github.com/can1357/oh-my-pi) provider 扩展，将 omp 连接到 **Qoder API**，通过 provider 接口暴露 Qoder Global 和 Qoder China 模型。
 
+> 本项目是 [pi-provider-qoder](https://github.com/simonsmh/pi-provider-qoder) 的 fork，适配 [OMP](https://github.com/can1357/oh-my-pi) 平台并进行了中文本地化。
+>
+
 ## 功能特性
 
 - **两个 provider 入口**：
@@ -50,11 +53,13 @@ Global Qoder：
 
 - 运行 `/login qoder`，选择 **Use API Key (PAT)**，然后粘贴令牌。
 - 或在启动 omp 前设置 `QODER_PERSONAL_ACCESS_TOKEN`（或 `QODER_PAT`）。
+- `QODER_API_KEY` 同样被支持；设置后 omp 会在启动时自动完成 PAT 交换和登录。
 
 Qoder China：
 
 - 运行 `/login qoder-cn`，然后粘贴 CN PAT。
 - 或在启动 omp 前设置 `QODERCN_PERSONAL_ACCESS_TOKEN`（或 `QODERCN_PAT`）。
+- `QODERCN_API_KEY` 同样被支持，设置后也会触发启动时自动登录。
 
 > 交换后的 job token 是短期有效的；provider 会在其过期时透明地重新交换已存储的 PAT。
 
