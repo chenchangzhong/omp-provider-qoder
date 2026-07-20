@@ -25,7 +25,7 @@ export function getQoderPatForMode(mode: string): string {
   return process.env.QODER_API_KEY || process.env.QODER_PERSONAL_ACCESS_TOKEN || process.env.QODER_PAT || "";
 }
 
-/** Exchange an environment PAT before pi resolves its initial model. */
+/** Exchange an environment PAT before omp resolves its initial model. */
 export async function autoLoginQoderFromEnvironment(providerID: string, mode: string): Promise<void> {
   const pat = getQoderPatForMode(mode);
   if (!pat) return;
