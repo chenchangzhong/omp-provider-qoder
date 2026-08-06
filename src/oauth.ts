@@ -15,7 +15,6 @@ export interface QoderCredentials extends OAuthCredentials {
   machineID: string;
 }
 
-
 /** Return the PAT exposed through the environment for a provider mode. */
 export function getQoderPatForMode(mode: string): string {
   if (isQoderCNMode(mode)) {
@@ -29,13 +28,26 @@ export async function autoLoginQoderFromEnvironment(providerID: string, mode: st
   const pat = getQoderPatForMode(mode);
   if (!pat) return;
 
-  const authStorage = AuthStorage.create();
-  if (authStorage.get(providerID)) return;
-
+  // An explicitly supplied PAT is authoritative. The auth file only stores
+  // the exchanged job token, so it cannot tell us whether the environment
+  // token changed. Re-exchange it on startup to avoid silently using an old
+  // account's credentials.
   const credentials = await credentialsFromPat(pat, mode);
-  authStorage.set(providerID, { type: "oauth", ...credentials });
+
+  if (typeof AuthStorage !== "undefined" && typeof AuthStorage?.create === "function") {
+    try {
+      const authStorage = AuthStorage.create();
+      authStorage.set(providerID, { type: "oauth", ...credentials });
+    } catch {
+      // AuthStorage unavailable — omp reads credentials from its own agent.db,
+      // and the upstream ~/.pi/agent/auth.json fallback does not apply here.
+    }
+  }
+
   const qCreds = credentials as QoderCredentials;
-  updateQoderModelsCache(qCreds.access, qCreds.userID, qCreds.name, qCreds.email, mode).catch(() => {});
+  // Wait for the model cache before the provider is registered. This matters
+  // for `pi --list-models`, which can exit before background work completes.
+  await updateQoderModelsCache(qCreds.access, qCreds.userID, qCreds.name, qCreds.email, mode);
 }
 
 /**
@@ -53,7 +65,9 @@ export function getCachedCredentials(_accessToken: string, providerID = "qoder")
     try {
       // bun:sqlite is available at runtime when running inside omp (bun)
       const { Database } = require("bun:sqlite") as {
-        Database: new (path: string) => {
+        Database: new (
+          path: string,
+        ) => {
           prepare: (sql: string) => { get: (...params: unknown[]) => { data?: string } };
           close: () => void;
         };

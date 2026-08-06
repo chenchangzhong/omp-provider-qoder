@@ -98,12 +98,15 @@ China：
 - **层级模型**：`auto`、`ultimate`、`performance`、`efficient`、`lite`
 - **前沿模型**：
   - `qmodel`（Qwen3.7 Plus）
+  - `cmodel`（Cantus）
+  - `qmodel_preview`（Qwen3.8 Max Preview）
   - `qmodel_latest`（Qwen3.7 Max）
   - `dmodel`（DeepSeek V4 Pro）
   - `dfmodel`（DeepSeek V4 Flash）
-  - `gm51model`（GLM）
-  - `kmodel`（Kimi）
-  - `mmodel`（MiniMax）
+  - `gm51model`（GLM 5.2）
+  - `kmodel`（Kimi K2.7 Code）
+  - `kmodel_latest`（Kimi K3）
+  - `mmodel`（MiniMax M3）
 
 ### China `qoder-cn`
 

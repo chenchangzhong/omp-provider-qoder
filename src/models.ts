@@ -131,6 +131,32 @@ export const staticModels: QoderModelDef[] = [
     maxTokens: 32768,
   },
   {
+    id: "cmodel",
+    name: "Cantus (Qoder)",
+    api: "qoder-api",
+    provider: "qoder",
+    baseUrl: "https://api3.qoder.sh/",
+    reasoning: true,
+    supportsEffort: true,
+    input: ["text", "image"],
+    cost: ZERO_COST,
+    contextWindow: 1000000,
+    maxTokens: 32768,
+  },
+  {
+    id: "qmodel_preview",
+    name: "Qwen3.8 Max Preview (Qoder)",
+    api: "qoder-api",
+    provider: "qoder",
+    baseUrl: "https://api3.qoder.sh/",
+    reasoning: true,
+    supportsEffort: true,
+    input: ["text", "image"],
+    cost: ZERO_COST,
+    contextWindow: 1000000,
+    maxTokens: 32768,
+  },
+  {
     id: "qmodel_latest",
     name: "Qwen3.7 Max (Qoder)",
     api: "qoder-api",
@@ -171,7 +197,7 @@ export const staticModels: QoderModelDef[] = [
   },
   {
     id: "gm51model",
-    name: "GLM 5.1 (Qoder)",
+    name: "GLM 5.2 (Qoder)",
     api: "qoder-api",
     provider: "qoder",
     baseUrl: "https://api3.qoder.sh/",
@@ -179,12 +205,12 @@ export const staticModels: QoderModelDef[] = [
     supportsEffort: true,
     input: ["text", "image"],
     cost: ZERO_COST,
-    contextWindow: 180000,
+    contextWindow: 1000000,
     maxTokens: 32768,
   },
   {
     id: "kmodel",
-    name: "Kimi K2.6 (Qoder)",
+    name: "Kimi K2.7 Code (Qoder)",
     api: "qoder-api",
     provider: "qoder",
     baseUrl: "https://api3.qoder.sh/",
@@ -193,6 +219,19 @@ export const staticModels: QoderModelDef[] = [
     input: ["text", "image"],
     cost: ZERO_COST,
     contextWindow: 256000,
+    maxTokens: 32768,
+  },
+  {
+    id: "kmodel_latest",
+    name: "Kimi K3 (Qoder)",
+    api: "qoder-api",
+    provider: "qoder",
+    baseUrl: "https://api3.qoder.sh/",
+    reasoning: false,
+    supportsEffort: false,
+    input: ["text", "image"],
+    cost: ZERO_COST,
+    contextWindow: 1000000,
     maxTokens: 32768,
   },
   {
@@ -345,6 +384,11 @@ export function getCachedModels(mode?: string): QoderModelDef[] {
     try {
       const data = JSON.parse(readFileSync(cachePath, "utf8"));
       if (data && Array.isArray(data.models)) {
+        // Older releases injected `auto` without a corresponding service config.
+        // Keep an explicitly enabled service model, but drop the legacy fallback.
+        if (data.configs && typeof data.configs === "object" && !data.configs.auto) {
+          return data.models.filter((model: QoderModelDef) => model.id !== "auto");
+        }
         return data.models;
       }
     } catch {}
@@ -503,23 +547,6 @@ export async function updateQoderModelsCache(
     }
 
     if (newModels.length === 0) return;
-
-    // Ensure auto is present
-    if (!newModels.some((m) => m.id === "auto")) {
-      newModels.unshift({
-        id: "auto",
-        name: isQoderCNMode(mode) ? "Auto · Qoder CN" : "Qoder Auto",
-        api: "qoder-api",
-        provider: isQoderCNMode(mode) ? "qoder-cn" : "qoder",
-        baseUrl: getQoderBaseUrl(mode),
-        reasoning: true,
-        supportsEffort: false,
-        input: ["text", "image"],
-        cost: ZERO_COST,
-        contextWindow: 180000,
-        maxTokens: 32768,
-      });
-    }
 
     const cacheData = {
       updatedAt: Date.now(),
