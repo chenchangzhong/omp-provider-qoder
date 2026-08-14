@@ -5,6 +5,7 @@ import type {
   AssistantMessageEventStream,
   Context,
   Model,
+  ToolCall,
 } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { streamQoder } from "../stream.js";
@@ -250,13 +251,13 @@ describe("streamQoder", () => {
     // omp passes systemPrompt as an array of prompt parts (title generation /
     // auto-thinking templates). The OpenAI-shaped qwen-plus upstream rejects a
     // non-string system content with `400 ... MessagesInputDto#content`.
-    let captured: { url: string; body: string } | null = null;
+    const state: { captured: { url: string; body: string } | null } = { captured: null };
     const response = new Response(SUCCESS_SSE, {
       status: 200,
       headers: { "content-type": "text/event-stream" },
     });
     const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
-      captured = { url: String(_url), body: decodeQoderBody(String(init?.body ?? "")) };
+      state.captured = { url: String(_url), body: decodeQoderBody(String(init?.body ?? "")) };
       return response;
     }) as unknown as typeof fetch;
     globalThis.fetch = fetchMock;
@@ -266,11 +267,77 @@ describe("streamQoder", () => {
     const stream = streamQoder(makeModel(), ctx, { apiKey: "fake" });
     await consume(stream);
 
-    expect(captured, "expected a fetch call").not.toBeNull();
-    const body = JSON.parse(captured?.body);
+    if (state.captured === null) throw new Error("expected a fetch call");
+    const body = JSON.parse(state.captured.body);
     const system = body.messages[0];
     expect(system.role).toBe("system");
     expect(typeof system.content).toBe("string");
     expect(system.content).toBe("Generate a title.\nKeep it short.");
+  });
+
+  it("emits a tool call that arrives with no arguments", async () => {
+    // A no-argument tool, or a model that sends id+name and stops. The block
+    // used to be created only inside `if (tc.function?.arguments)`, so this
+    // produced a toolCallsState entry and NO content block — and the finalizer
+    // then set stopReason "toolUse" on a message with no tool call in it. pi's
+    // agent loop had nothing to execute and the turn ended silently, mid-task.
+    const sse =
+      sseEnvelope(
+        chunk({
+          tool_calls: [{ index: 0, id: "call_1", function: { name: "advisor", arguments: "" } }],
+        }),
+      ) +
+      sseEnvelope(finishChunk("tool_calls")) +
+      DONE_SSE;
+    globalThis.fetch = mockFetch(sse);
+    const stream = streamQoder(makeModel(), makeContext(), { apiKey: "fake" });
+    const events = await consume(stream);
+
+    const done = events.find((e) => e.type === "done");
+    const msg = (done as { message: AssistantMessage }).message;
+    const toolCall = msg.content.find((c) => c.type === "toolCall") as ToolCall | undefined;
+    expect(toolCall, "a named tool call must reach the message even with no arguments").toBeDefined();
+    expect(toolCall?.name).toBe("advisor");
+    expect(toolCall?.id).toBe("call_1");
+    expect(toolCall?.arguments).toEqual({});
+    expect(msg.stopReason).toBe("toolUse");
+  });
+
+  it("picks up an id and name that arrive after the block is open", async () => {
+    // Streamed the other way round: arguments first, identity later.
+    const sse =
+      sseEnvelope(chunk({ tool_calls: [{ index: 0, function: { name: "bash", arguments: '{"comm' } }] })) +
+      sseEnvelope(chunk({ tool_calls: [{ index: 0, id: "call_9", function: { arguments: 'and":"ls"}' } }] })) +
+      sseEnvelope(finishChunk("tool_calls")) +
+      DONE_SSE;
+    globalThis.fetch = mockFetch(sse);
+    const stream = streamQoder(makeModel(), makeContext(), { apiKey: "fake" });
+    const events = await consume(stream);
+
+    const done = events.find((e) => e.type === "done");
+    const msg = (done as { message: AssistantMessage }).message;
+    const toolCall = msg.content.find((c) => c.type === "toolCall") as ToolCall | undefined;
+    expect(toolCall?.id).toBe("call_9");
+    expect(toolCall?.name).toBe("bash");
+    expect(toolCall?.arguments).toEqual({ command: "ls" });
+  });
+
+  it("does not claim toolUse when no tool call reached the message", async () => {
+    // A malformed stream: a tool_calls delta with neither id nor name. Better a
+    // clean "stop" than a message that says toolUse and carries nothing, which
+    // the agent loop cannot act on and cannot report.
+    const sse =
+      sseEnvelope(chunk({ content: "thinking about it", role: "assistant" })) +
+      sseEnvelope(chunk({ tool_calls: [{ index: 0, function: {} }] })) +
+      sseEnvelope(finishChunk("stop")) +
+      DONE_SSE;
+    globalThis.fetch = mockFetch(sse);
+    const stream = streamQoder(makeModel(), makeContext(), { apiKey: "fake" });
+    const events = await consume(stream);
+
+    const done = events.find((e) => e.type === "done");
+    const msg = (done as { message: AssistantMessage }).message;
+    expect(msg.content.find((c) => c.type === "toolCall")).toBeUndefined();
+    expect(msg.stopReason).toBe("stop");
   });
 });
