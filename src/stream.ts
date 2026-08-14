@@ -11,6 +11,7 @@ import type {
   ToolCall,
 } from "@earendil-works/pi-ai";
 import * as AiSdk from "@earendil-works/pi-ai";
+import { AuthStorage } from "@earendil-works/pi-coding-agent";
 import {
   buildAuthHeaders,
   getMachineId,
@@ -21,7 +22,7 @@ import {
   isQoderCNMode,
 } from "./cosy.js";
 import { getCachedModelConfig } from "./models.js";
-import { getCachedCredentials } from "./oauth.js";
+import { getCachedCredentials, refreshQoderToken, refreshQoderTokenCN } from "./oauth.js";
 import { qoderEncodeBody } from "./qoder-encoding.js";
 import { stripThinkingTags, ThinkingTagParser } from "./thinking-parser.js";
 import { transformMessagesForQoder, transformTools } from "./transform.js";
@@ -104,7 +105,7 @@ export function streamQoder(
   (async () => {
     try {
       const providerMode = model.provider === "qoder-cn" ? "cn" : getQoderMode();
-      const accessToken = options?.apiKey;
+      let accessToken: string = options?.apiKey || "";
       if (!accessToken) {
         throw new Error(
           isQoderCNMode(providerMode)
@@ -236,40 +237,131 @@ export function streamQoder(
 
       const chatURL = getQoderChatURL(providerMode);
 
-      const headers = buildAuthHeaders(encodedBytes, chatURL, {
-        userID,
-        authToken: accessToken,
-        name,
-        email,
-        machineID,
-      });
-
       const modelSource = modelConfig.source || "system";
 
-      const response = await fetch(chatURL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "text/event-stream",
-          "Cache-Control": "no-cache",
-          "Accept-Encoding": "identity",
-          "X-Model-Key": qoderModel,
-          "X-Model-Source": modelSource,
-          ...headers,
-        },
-        body: encodedBytes,
-        signal: options?.signal,
-      });
+      // Qoder job tokens (jt-...) are short-lived. When the upstream rejects
+      // one as expired (`403 {"code":"105","message":"Login expired"}`), the
+      // credentials are refreshed once and the request retried before the
+      // error surfaces. The retry happens only before the first envelope —
+      // content already streamed is never replayed, so mid-stream 403s still
+      // surface as errors below.
+      async function performRequest(token: string): Promise<{
+        reader: ReadableStreamDefaultReader<Uint8Array> | null;
+        buffer: string;
+        envelope?: { statusCodeValue?: number; body?: string };
+      }> {
+        const headers = buildAuthHeaders(encodedBytes, chatURL, {
+          userID,
+          authToken: token,
+          name,
+          email,
+          machineID,
+        });
 
-      if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`Qoder API request failed: ${response.status} ${response.statusText}. Response: ${errText}`);
+        const response = await fetch(chatURL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "text/event-stream",
+            "Cache-Control": "no-cache",
+            "Accept-Encoding": "identity",
+            "X-Model-Key": qoderModel,
+            "X-Model-Source": modelSource,
+            ...headers,
+          },
+          body: encodedBytes,
+          signal: options?.signal,
+        });
+
+        if (!response.ok) {
+          const errText = await response.text();
+          // An HTTP-level 403 carries the same JSON body as an SSE envelope;
+          // normalize it so the login-expiry retry applies to both shapes.
+          if (errText.includes("Login expired")) {
+            return { reader: null, buffer: "", envelope: { statusCodeValue: response.status, body: errText } };
+          }
+          throw new Error(`Qoder API request failed: ${response.status} ${response.statusText}. Response: ${errText}`);
+        }
+
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error("No response body");
+
+        // Read frames until the first `data:` line resolves; any remaining
+        // buffered lines are handed back to the main loop below.
+        const decoder = new TextDecoder();
+        let buffer = "";
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) return { reader, buffer, envelope: undefined };
+          buffer += decoder.decode(value, { stream: true });
+          while (true) {
+            const lineEnd = buffer.indexOf("\n");
+            if (lineEnd === -1) break;
+            const line = buffer.substring(0, lineEnd).trim();
+            buffer = buffer.substring(lineEnd + 1);
+            if (!line.startsWith("data:")) continue;
+            const dataStr = line.substring(5).trim();
+            if (dataStr === "[DONE]") return { reader, buffer, envelope: undefined };
+            try {
+              const envelope = JSON.parse(dataStr) as { statusCodeValue?: number; body?: string };
+              // Hand the first line back to the main loop: the envelope's
+              // inner payload (text, tool calls, ...) must be parsed there
+              // like any other line, not consumed by the retry probe.
+              return { reader, buffer: `data:${dataStr}\n${buffer}`, envelope };
+            } catch {
+              // malformed line — skip it, keep scanning for the first envelope
+            }
+          }
+        }
       }
 
-      const reader = response.body?.getReader();
+      async function refreshAndPersist(): Promise<string | null> {
+        const creds = cachedCreds;
+        if (!creds?.refresh) return null;
+        try {
+          const refreshed = providerMode === "cn" ? await refreshQoderTokenCN(creds) : await refreshQoderToken(creds);
+          // A successful refresh must yield a NEW job token. Refresh failures
+          // in oauth.ts fall back to "extend validity" with the same access
+          // token, which cannot fix a 403 — treat that as refresh failed.
+          if (!refreshed.access || refreshed.access === accessToken) return null;
+          if (typeof AuthStorage !== "undefined" && typeof AuthStorage?.create === "function") {
+            try {
+              AuthStorage.create().set(model.provider, { type: "oauth", ...refreshed });
+            } catch {}
+          }
+          return refreshed.access;
+        } catch {
+          return null;
+        }
+      }
+
+      let opened = await performRequest(accessToken);
+      if (opened.envelope && opened.envelope.statusCodeValue !== undefined && opened.envelope.statusCodeValue !== 200) {
+        const env = opened.envelope;
+        const loginExpired =
+          env.statusCodeValue === 403 && typeof env.body === "string" && env.body.includes("Login expired");
+        if (loginExpired) {
+          const newToken = await refreshAndPersist();
+          if (newToken) {
+            accessToken = newToken;
+            // Release the failed request's stream before opening the retry;
+            // otherwise the abandoned reader pins the HTTP connection until GC.
+            opened.reader?.cancel().catch(() => {});
+            opened = await performRequest(accessToken);
+          }
+        }
+        if (
+          opened.envelope &&
+          opened.envelope.statusCodeValue !== undefined &&
+          opened.envelope.statusCodeValue !== 200
+        ) {
+          throw new Error(`Upstream status ${opened.envelope.statusCodeValue}: ${opened.envelope.body}`);
+        }
+      }
+      const reader = opened.reader;
       if (!reader) throw new Error("No response body");
       const decoder = new TextDecoder();
-      let buffer = "";
+      let buffer = opened.buffer;
 
       let contentBlockIndex = -1;
       let thinkingBlockIndex = -1;
@@ -280,12 +372,10 @@ export function streamQoder(
 
       stream.push({ type: "start", partial: output });
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-
+      // The retry probe consumed the first frame up to the first envelope;
+      // parse any lines it left buffered before reading the next frame.
+      let streamEnded = false;
+      while (!streamEnded) {
         while (true) {
           const lineEnd = buffer.indexOf("\n");
           if (lineEnd === -1) break;
@@ -297,6 +387,7 @@ export function streamQoder(
 
           const dataStr = line.substring(5).trim();
           if (dataStr === "[DONE]") {
+            streamEnded = true;
             break;
           }
 
@@ -477,6 +568,11 @@ export function streamQoder(
             throw e;
           }
         }
+
+        if (streamEnded) break;
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
       }
 
       if (thinkingParser) {
