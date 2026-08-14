@@ -81,6 +81,28 @@ function mockFetch(body: string): typeof fetch {
   return vi.fn(async () => response) as unknown as typeof fetch;
 }
 
+/** Inverse of qoderEncodeBody — decode a captured request body for assertions. */
+function decodeQoderBody(encoded: string): string {
+  const qoderCustomAlphabet = "_doRTgHZBKcGVjlvpC,@aFSx#DPuNJme&i*MzLOEn)sUrthbf%Y^w.(kIQyXqWA!";
+  const qoderStdAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  const n = encoded.length;
+  const a = Math.floor(n / 3);
+  let rearranged = "";
+  for (const c of encoded) {
+    if (c === "$") {
+      rearranged += "=";
+    } else {
+      const idx = qoderCustomAlphabet.indexOf(c);
+      rearranged += idx >= 0 ? qoderStdAlphabet[idx] : c;
+    }
+  }
+  // encode reordered std = X + Y + Z (|X| = |Z| = a) into Z + Y + X.
+  const x = rearranged.slice(n - a);
+  const z = rearranged.slice(0, a);
+  const y = rearranged.slice(a, n - a);
+  return Buffer.from(x + y + z, "base64").toString("utf8");
+}
+
 function makeModel(): Model<Api> {
   return { id: "ultimate", api: "qoder-api" as Api, provider: "qoder" } as Model<Api>;
 }
@@ -222,5 +244,33 @@ describe("streamQoder", () => {
     expect(msg.stopReason).toBe("toolUse");
     const toolCall = msg.content.find((c) => c.type === "toolCall");
     expect(toolCall).toBeDefined();
+  });
+
+  it("normalizes an array systemPrompt to a string system message (qwen-plus 400 regression)", async () => {
+    // omp passes systemPrompt as an array of prompt parts (title generation /
+    // auto-thinking templates). The OpenAI-shaped qwen-plus upstream rejects a
+    // non-string system content with `400 ... MessagesInputDto#content`.
+    let captured: { url: string; body: string } | null = null;
+    const response = new Response(SUCCESS_SSE, {
+      status: 200,
+      headers: { "content-type": "text/event-stream" },
+    });
+    const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      captured = { url: String(_url), body: decodeQoderBody(String(init?.body ?? "")) };
+      return response;
+    }) as unknown as typeof fetch;
+    globalThis.fetch = fetchMock;
+
+    const ctx = makeContext();
+    ctx.systemPrompt = ["Generate a title.", "Keep it short."] as unknown as string;
+    const stream = streamQoder(makeModel(), ctx, { apiKey: "fake" });
+    await consume(stream);
+
+    expect(captured, "expected a fetch call").not.toBeNull();
+    const body = JSON.parse(captured?.body);
+    const system = body.messages[0];
+    expect(system.role).toBe("system");
+    expect(typeof system.content).toBe("string");
+    expect(system.content).toBe("Generate a title.\nKeep it short.");
   });
 });

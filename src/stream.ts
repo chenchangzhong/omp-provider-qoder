@@ -137,7 +137,14 @@ export function streamQoder(
       const maxOutputTokens = modelConfig.max_output_tokens || 32768;
 
       const normalizedMessages = transformMessagesForQoder(context.messages);
-      const systemText = context.systemPrompt || "";
+      // omp passes systemPrompt as an array of prompt parts (e.g. title
+      // generation / auto-thinking templates). Qoder's OpenAI-shaped upstream
+      // (qwen-plus) rejects a non-string system content with `400 set property
+      // error ... MessagesInputDto#content`, so normalize to a single string.
+      const rawSystemPrompt = context.systemPrompt ?? "";
+      const systemText = Array.isArray(rawSystemPrompt)
+        ? rawSystemPrompt.map((part) => (typeof part === "string" ? part : "")).join("\n")
+        : rawSystemPrompt;
 
       let lastUserText = "";
       for (let i = normalizedMessages.length - 1; i >= 0; i--) {
